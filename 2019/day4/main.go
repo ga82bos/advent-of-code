@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+	"time"
+)
 
 func main() {
 	start := 172_851
@@ -13,49 +17,57 @@ func main() {
 	//}
 
 	//return
-	count := 0
-	for i := start; i <= end; i++ {
-		if meetsCriteria(i) {
-			count++
-		}
-	}
+	s := time.Now()
+	count := countPws(start, end)
+	elapsed := time.Since(s)
+	log.Printf("took %s", elapsed)
+
 	fmt.Printf("count of numbers meeting criteria: %d\n", count)
 }
 
-func meetsCriteria(num int) bool {
+func countPws(start, end int) int {
+	count := 0
+	for i := start; i <= end; i++ {
+		digits := digits(i)
+		if meetsCriteria(digits) {
+			count++
+		}
+	}
+	return count
+}
+
+func meetsCriteria(digits []int) bool {
 	hasTuple := false
 	possibleTuple := false
 
 	inAdjacentGroup := false
 
-	digits := digits(num)
 	// note: iterate until i < len(digits)-1 because we access last element with i+1
 	for i := 0; i < len(digits)-1; i++ {
 		if digits[i] > digits[i+1] {
 			return false
 		}
-		match := digits[i] == digits[i+1]
-		possibleTuple = !match && possibleTuple || match && !inAdjacentGroup
-		hasTuple = !match && (hasTuple || inAdjacentGroup && possibleTuple) || match && hasTuple
-		inAdjacentGroup = match
+		//match := digits[i] == digits[i+1]
+		//possibleTuple = !match && possibleTuple || match && !inAdjacentGroup
+		//hasTuple = !match && (hasTuple || inAdjacentGroup && possibleTuple) || match && hasTuple
+		//inAdjacentGroup = match
 
-		/*
-			// more readable version below ;) Propositional calculus ftw
-			if digits[i] == digits[i+1] {
-				possibleTuple = !atAdjacentStart
-				atAdjacentStart = true
+		// more readable version below ;) Propositional calculus ftw
+		if digits[i] == digits[i+1] {
+			//possibleTuple = !inAdjacentGroup
+			//inAdjacentGroup = true
 
-				if !atAdjacentStart {
-					atAdjacentStart = true
-					possibleTuple = true
-					continue
-				}
-				possibleTuple = false
-			} else {
-				hasTuple = hasTuple || atAdjacentStart && possibleTuple
-				atAdjacentStart = false
+			if !inAdjacentGroup {
+				inAdjacentGroup = true
+				possibleTuple = true
+				continue
 			}
-		*/
+			possibleTuple = false
+		} else {
+			hasTuple = hasTuple || inAdjacentGroup && possibleTuple
+			inAdjacentGroup = false
+		}
+
 	}
 	hasTuple = hasTuple || inAdjacentGroup && possibleTuple // edge case for last 2 digits are tuple
 	return hasTuple
