@@ -1,8 +1,12 @@
 package shared
 
 import (
+	"fmt"
 	"github.com/pkg/errors"
+	"os"
 )
+
+type onErrorFunc = func(cid int, err error)
 
 type OpCode int
 
@@ -19,6 +23,30 @@ const (
 	ParamModeImmediate  ParameterMode = 1
 )
 
+type Status int
+
+const (
+	StatusCreated Status = 0
+	StatusRunning Status = 1
+	StatusWaiting Status = 2
+	StatusHalted  Status = 3
+)
+
+func (s Status) String() string {
+	switch s {
+	case 0:
+		return "CREATED"
+	case 1:
+		return "RUNNING"
+	case 2:
+		return "WAITING"
+	case 3:
+		return "HALTED"
+	default:
+		return "INVALID_STATUS"
+	}
+}
+
 func (p *ParameterMode) Parse(in int) error {
 	switch in {
 	case 0:
@@ -32,21 +60,34 @@ func (p *ParameterMode) Parse(in int) error {
 }
 
 type Computer struct {
+	id             int
+	originalMem    []int
 	memory         []int
 	ip             int
 	instructionSet map[OpCode]Instruction
-	read           func() int
-	write          func(out int)
-	halt           bool
+	onError        onErrorFunc
+	error          chan error
+	status         Status
+	input          chan int
+	output         chan int
+	debug          bool
 }
 
-func NewComputer(memory []int, inputCB func() int, outputCB func(out int)) *Computer {
+func NewComputer(id int, memory string, onError onErrorFunc) *Computer {
+	mem, err := StrToMem(memory)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
 	c := &Computer{
-		memory: memory,
-		ip:     0,
-		read:   inputCB,
-		write:  outputCB,
-		halt:   false,
+		id:          id,
+		originalMem: CloneSlice(mem),
+		memory:      CloneSlice(mem),
+		ip:          0,
+		onError:     onError,
+		input:       make(chan int, 10),
+		output:      make(chan int, 10),
+		status:      StatusCreated,
 	}
 	instructions := []Instruction{
 		{
@@ -104,17 +145,87 @@ func NewComputer(memory []int, inputCB func() int, outputCB func(out int)) *Comp
 	return c
 }
 
-func (c *Computer) Run(input ...int) error {
+func (c *Computer) SetDebug(val bool) {
+	c.debug = val
+}
+
+func (c *Computer) Reset() {
+	c.memory = CloneSlice(c.originalMem)
+	c.setStatus(StatusCreated)
+	close(c.input)
+	close(c.output)
+	c.input = make(chan int, 10)
+	c.output = make(chan int, 10)
+	c.ip = 0
+}
+
+func (c *Computer) QueueInput(val int) {
+	if c.Status() == StatusHalted {
+		return
+	}
+	c.input <- val
+}
+
+func (c *Computer) log(format string, args ...interface{}) {
+	if !c.debug {
+		return
+	}
+	c.log(format+"\n", args...)
+}
+
+func (c *Computer) Run() {
+	if c.Status() != StatusCreated {
+		return
+	}
+	c.log("[%d] started\n", c.id)
 	var err error
-	for !c.halt {
+	c.setStatus(StatusRunning)
+	for c.status == StatusRunning {
 		ins := c.fetchNextInstruction()
 		err = c.execute(ins)
 		if err != nil {
 			err = errors.Wrapf(err, "execution error. ip: %d", c.ip)
-			c.halt = true
+			c.error <- err
+			c.setStatus(StatusHalted)
 		}
 	}
-	return err
+}
+
+func (c *Computer) WaitForOutput() int {
+	return <-c.output
+}
+
+func (c *Computer) GetOutput() (int, error) {
+	out, ok := <-c.output
+	if !ok {
+		return 0, errors.New("no output")
+	}
+	return out, nil
+}
+
+func (c *Computer) Error() error {
+	if err, ok := <-c.error; ok {
+		return err
+	}
+	return nil
+}
+
+func (c *Computer) writeError() {
+	err := <-c.error
+	c.onError(c.id, err)
+}
+
+func (c *Computer) Shutdown() {
+
+	if c.Status() == StatusHalted {
+		return
+	}
+	c.setStatus(StatusHalted)
+
+	close(c.input)
+	close(c.output)
+
+	c.log("[%d] shutdown\n", c.id)
 }
 
 func (c *Computer) readMemChunk(start, length int) []int {
@@ -195,6 +306,11 @@ func (c *Computer) setIP(val int) {
 	c.ip = val
 }
 
+func (c *Computer) setStatus(status Status) {
+	c.log("[%d] status changed: %s\n", c.id, status)
+	c.status = status
+}
+
 func (c *Computer) addExec(in Instruction, args []int) {
 	result := c.readMem(args[0]) + c.readMem(args[1])
 	c.writeInt(args[2], result)
@@ -202,7 +318,7 @@ func (c *Computer) addExec(in Instruction, args []int) {
 }
 
 func (c *Computer) haltExec(Instruction, []int) {
-	c.halt = true
+	c.setStatus(StatusHalted)
 }
 
 func (c *Computer) equalsExec(in Instruction, args []int) {
@@ -241,13 +357,20 @@ func (c *Computer) jumpFalseExec(in Instruction, args []int) {
 
 func (c *Computer) writeExec(in Instruction, args []int) {
 	val := c.readMem(args[0])
-	c.write(val)
+	c.output <- val
+	//c.onWrite(c.id, val)
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) readExec(in Instruction, args []int) {
-	input := c.read()
-	c.writeInt(args[0], input)
+	c.setStatus(StatusWaiting)
+	val := <-c.input
+	c.setStatus(StatusRunning)
+	//c.log("%d waiting for input\n", c.id)
+	//val := c.onRead(c.id)
+	c.log("[%d] input received: %d\n", c.id, val)
+
+	c.writeInt(args[0], val)
 	c.incrementIP(in.argCount + 1)
 }
 
@@ -255,4 +378,8 @@ func (c *Computer) multExec(in Instruction, args []int) {
 	result := c.readMem(args[0]) * c.readMem(args[1])
 	c.writeInt(args[2], result)
 	c.incrementIP(in.argCount + 1)
+}
+
+func (c *Computer) Status() Status {
+	return c.status
 }
