@@ -1,17 +1,10 @@
 package main
 
 import (
+	"../../shared"
 	"fmt"
-	"gitea.curunir/Pokerkoffer/gitealoggertest/log"
 	"io/ioutil"
-	"strconv"
-	"strings"
-)
-
-const (
-	OpCodeHALT = 99
-	OpCodeADD  = 1
-	OpCodeMULT = 2
+	"os"
 )
 
 /*
@@ -25,85 +18,55 @@ const (
 */
 
 func main() {
-	file, err := ioutil.ReadFile("./input_original.txt")
+	file, err := ioutil.ReadFile("./2019/day2/input_original.txt")
 	if err != nil {
-		log.Fatal(err.Error())
+		fmt.Printf("ERROR: %s", err.Error())
+		os.Exit(1)
 	}
+	mem := string(file)
+	res := Day2Task1(mem)
+	shared.PrintSolution(2, 1, "%d", res)
 
-	contents := string(file)
-	programStr := strings.Split(contents, ",")
-	var memory []int
-	for _, s := range programStr {
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			log.Fatal("failed to convert " + s)
-		}
-		memory = append(memory, n)
-	}
+	noun, verb := Day2Task2(mem)
+	shared.PrintSolution(2, 2, "noun: %d verb: %d", noun, verb)
+}
 
-	noun := 0
-	stop := false
-	for !stop {
+func Day2Task2(mem string) (int, int) {
+	c := shared.NewComputer(0, mem, func(cid int, err error) {
+		fmt.Printf("ERROR: %s", err.Error())
+		os.Exit(1)
+	})
+
+	found := false
+	for !found {
 		verb := 0
-		for verb <= 99 {
-			p := append(memory[:0:0], memory...) // clone memory
-			p[1] = noun
-			p[2] = verb
-			compute(p)
-			result := p[0]
-			if result == 19690720 {
-				fmt.Printf("FOUND: noun: %d, verb: %d", noun, verb)
-				stop = true
+		for verb < 100 {
+			noun := 0
+			for noun < 100 {
+				c.Reset()
+				c.WriteMem(1, noun)
+				c.WriteMem(2, verb)
+				c.Run()
+				c.WaitUntilHalted()
+				if c.ReadMem(0) == 19690720 {
+					found = true
+					return noun, verb
+				}
+				noun++
 			}
 			verb++
 		}
-		noun++
-
-		if noun > 100 || verb > 100 {
-			log.Fatal("err")
-		}
 	}
-
-	//compute(memory)
-	//fmt.Println(memory)
+	return -1, -1
 }
 
-func compute(program []int) {
-	halt := false
-	i := 0
-	for !halt {
-		op := program[i]
-		switch op {
-		case OpCodeHALT:
-			halt = true
-		case OpCodeADD:
-			processInstruction(program[i], program[i+1], program[i+2], program[i+3], program)
-			i += 4
-		case OpCodeMULT:
-			processInstruction(program[i], program[i+1], program[i+2], program[i+3], program)
-			i += 4
-		default:
-			log.Error(fmt.Sprintf("invalid instruction at pos %d: %d", i, op))
-			halt = true
-		}
-		if i > len(program) {
-			log.Fatal("i exceeds len(program): " + strconv.Itoa(i))
-		}
-	}
-}
+func Day2Task1(mem string) int {
+	c := shared.NewComputer(0, mem, func(cid int, err error) {
+		fmt.Printf("ERROR: %s", err.Error())
+		os.Exit(1)
+	})
 
-func processInstruction(opcode, aPtr, bPtr, storePtr int, program []int) {
-
-	aVal := program[aPtr]
-	bVal := program[bPtr]
-
-	switch opcode {
-	case 1:
-		program[storePtr] = aVal + bVal
-	case 2:
-		program[storePtr] = aVal * bVal
-	default:
-		log.Fatal(fmt.Sprintf("wrong opcode: %d", opcode))
-	}
-
+	c.Run()
+	c.WaitUntilHalted()
+	return c.ReadMem(0)
 }
