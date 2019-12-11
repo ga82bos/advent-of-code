@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"os"
+	"runtime"
 )
 
 type onErrorFunc = func(cid int, err error)
@@ -85,8 +86,8 @@ func NewComputer(id int, memory string, onError onErrorFunc) *Computer {
 		memory:      CloneSlice(mem),
 		ip:          0,
 		onError:     onError,
-		input:       make(chan int, 10),
-		output:      make(chan int, 10),
+		input:       make(chan int, 100),
+		output:      make(chan int, 100),
 		status:      StatusCreated,
 	}
 	instructions := []Instruction{
@@ -186,13 +187,30 @@ func (c *Computer) Run() {
 		if err != nil {
 			err = errors.Wrapf(err, "execution error. ip: %d", c.ip)
 			c.error <- err
-			c.setStatus(StatusHalted)
+			c.halt()
 		}
 	}
 }
 
 func (c *Computer) WaitForOutput() int {
 	return <-c.output
+}
+
+func (c *Computer) ReadAllOutputs() ([]int, error) {
+	if c.Status() != StatusHalted {
+		return nil, errors.New("program hasn't halted")
+	}
+	var o []int
+	for val := range c.output {
+		o = append(o, val)
+	}
+	return o, nil
+}
+
+func (c *Computer) WaitUntilHalted() {
+	for c.Status() != StatusHalted {
+		runtime.Gosched()
+	}
 }
 
 func (c *Computer) GetOutput() (int, error) {
@@ -216,14 +234,7 @@ func (c *Computer) writeError() {
 }
 
 func (c *Computer) Shutdown() {
-
-	if c.Status() == StatusHalted {
-		return
-	}
-	c.setStatus(StatusHalted)
-
-	close(c.input)
-	close(c.output)
+	c.halt()
 
 	c.log("[%d] shutdown\n", c.id)
 }
@@ -294,11 +305,11 @@ func getOpCode(in int) OpCode {
 	return OpCode(op)
 }
 
-func (c *Computer) writeInt(pos int, val int) {
+func (c *Computer) WriteMem(pos int, val int) {
 	c.memory[pos] = val
 }
 
-func (c *Computer) readMem(pos int) int {
+func (c *Computer) ReadMem(pos int) int {
 	return c.readMemChunk(pos, 1)[0]
 }
 
@@ -312,51 +323,51 @@ func (c *Computer) setStatus(status Status) {
 }
 
 func (c *Computer) addExec(in Instruction, args []int) {
-	result := c.readMem(args[0]) + c.readMem(args[1])
-	c.writeInt(args[2], result)
+	result := c.ReadMem(args[0]) + c.ReadMem(args[1])
+	c.WriteMem(args[2], result)
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) haltExec(Instruction, []int) {
-	c.setStatus(StatusHalted)
+	c.halt()
 }
 
 func (c *Computer) equalsExec(in Instruction, args []int) {
 	val := 0
-	if c.readMem(args[0]) == c.readMem(args[1]) {
+	if c.ReadMem(args[0]) == c.ReadMem(args[1]) {
 		val = 1
 	}
-	c.writeInt(args[2], val)
+	c.WriteMem(args[2], val)
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) lessThanExec(in Instruction, args []int) {
 	val := 0
-	if c.readMem(args[0]) < c.readMem(args[1]) {
+	if c.ReadMem(args[0]) < c.ReadMem(args[1]) {
 		val = 1
 	}
-	c.writeInt(args[2], val)
+	c.WriteMem(args[2], val)
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) jumpTrueExec(in Instruction, args []int) {
-	if c.readMem(args[0]) != 0 {
-		c.setIP(c.readMem(args[1]))
+	if c.ReadMem(args[0]) != 0 {
+		c.setIP(c.ReadMem(args[1]))
 		return
 	}
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) jumpFalseExec(in Instruction, args []int) {
-	if c.readMem(args[0]) == 0 {
-		c.setIP(c.readMem(args[1]))
+	if c.ReadMem(args[0]) == 0 {
+		c.setIP(c.ReadMem(args[1]))
 		return
 	}
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) writeExec(in Instruction, args []int) {
-	val := c.readMem(args[0])
+	val := c.ReadMem(args[0])
 	c.output <- val
 	//c.onWrite(c.id, val)
 	c.incrementIP(in.argCount + 1)
@@ -370,16 +381,26 @@ func (c *Computer) readExec(in Instruction, args []int) {
 	//val := c.onRead(c.id)
 	c.log("[%d] input received: %d\n", c.id, val)
 
-	c.writeInt(args[0], val)
+	c.WriteMem(args[0], val)
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) multExec(in Instruction, args []int) {
-	result := c.readMem(args[0]) * c.readMem(args[1])
-	c.writeInt(args[2], result)
+	result := c.ReadMem(args[0]) * c.ReadMem(args[1])
+	c.WriteMem(args[2], result)
 	c.incrementIP(in.argCount + 1)
 }
 
 func (c *Computer) Status() Status {
 	return c.status
+}
+
+func (c *Computer) halt() {
+	if c.Status() == StatusHalted {
+		return
+	}
+	c.setStatus(StatusHalted)
+
+	close(c.input)
+	close(c.output)
 }

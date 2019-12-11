@@ -1,6 +1,8 @@
 package shared
 
 import (
+	"fmt"
+	"github.com/pkg/errors"
 	"strconv"
 	"strings"
 )
@@ -28,6 +30,23 @@ func StrToDigitArr(num string) ([]int, error) {
 	return nums, nil
 }
 
+func StrToMem(in string) ([]int, error) {
+	programStr := strings.Split(in, ",")
+	var memory []int
+	for _, s := range programStr {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to convert %s", s)
+		}
+		memory = append(memory, n)
+	}
+	return memory, nil
+}
+
+func CloneSlice(slice []int) []int {
+	return append(slice[:0:0], slice...)
+}
+
 func Abs(x int) int {
 	if x < 0 {
 		return -x
@@ -47,4 +66,8 @@ func Min(x, y int) int {
 		return x
 	}
 	return y
+}
+
+func PrintSolution(day int, task int, format string, args ...interface{}) {
+	fmt.Printf("Solution Day%d-Task%d: %s\n", day, task, fmt.Sprintf(format, args...))
 }

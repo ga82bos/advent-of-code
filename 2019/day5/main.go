@@ -1,6 +1,7 @@
 package main
 
 import (
+	"../../shared"
 	"bufio"
 	"fmt"
 	"io/ioutil"
@@ -47,40 +48,35 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	contents := string(file)
-	//contents := "3,21,1008,21,8,20,1005,20,22,107,8,21,20,1006,20,31,1106,0,36,98,0,0,1002,21,125,20,4,20,1105,1,46,104,999,1105,1,46,1101,1000,1,20,4,20,1105,1,46,98,99"
-	//contents := "3,9,8,9,10,9,4,9,99,-1,8"
-	programStr := strings.Split(contents, ",")
-	var memory []int
-	for _, s := range programStr {
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			log.Fatal("failed to convert " + s)
-		}
-		memory = append(memory, n)
+	mem := string(file)
+	res := Day5Task12(mem, 1)
+	shared.PrintSolution(5, 1, "Diagnostic code: %d", res)
+
+	res = Day5Task12(mem, 5)
+	shared.PrintSolution(5, 2, "Diagnostic code: %d", res)
+
+}
+
+func Day5Task12(mem string, systemID int) int {
+	c := shared.NewComputer(0, mem, func(cid int, err error) {
+		fmt.Printf("Error: %v", err)
+		os.Exit(1)
+	})
+
+	c.QueueInput(systemID)
+	go c.Run()
+	c.WaitUntilHalted()
+	result, err := c.ReadAllOutputs()
+	if err != nil {
+		fmt.Printf("ERROR: %v", err)
+		os.Exit(1)
 	}
-
-	compute(memory)
-
-	//noun := 0
-	//stop := false
-	//for !stop {
-	//	verb := 0
-	//	for verb <= 99 {
-	//		p := append(memory[:0:0], memory...) // clone memory
-	//		p[1] = noun
-	//		p[2] = verb
-	//		compute(p)
-	//		result := p[0]
-	//		if result == 19690720 {
-	//			fmt.Printf("FOUND: noun: %d, verb: %d", noun, verb)
-	//			stop = true
-	//		}
-	//		verb++
-	//	}
-	//	noun++
-	//
-	//}
+	for _, res := range result {
+		if res != 0 {
+			return res
+		}
+	}
+	return -1
 }
 
 func compute(program []int) {
