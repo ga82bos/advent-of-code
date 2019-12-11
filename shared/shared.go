@@ -3,6 +3,7 @@ package shared
 import (
 	"fmt"
 	"github.com/pkg/errors"
+	"io/ioutil"
 	"strconv"
 	"strings"
 )
@@ -70,4 +71,13 @@ func Min(x, y int) int {
 
 func PrintSolution(day int, task int, format string, args ...interface{}) {
 	fmt.Printf("Solution Day%d-Task%d: %s\n", day, task, fmt.Sprintf(format, args...))
+}
+
+func ReadFile(file string) (string, error) {
+	f, err := ioutil.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+	return string(f), nil
+
 }

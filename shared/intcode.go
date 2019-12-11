@@ -55,6 +55,8 @@ func (p *ParameterMode) Parse(in int) error {
 		*p = ParamModePositional
 	case 1:
 		*p = ParamModeImmediate
+	case 2:
+		*p = ParamModeRelative
 	default:
 		return errors.Errorf("invalid parameter mode: %d", in)
 	}
@@ -248,12 +250,8 @@ func (c *Computer) Shutdown() {
 	c.log("[%d] shutdown\n", c.id)
 }
 
-func (c *Computer) readMemChunk(start, length int) []int {
-	return c.memory[start : start+length]
-}
-
 func (c *Computer) fetchNextInstruction() int {
-	return c.memory[c.ip]
+	return c.ReadMem(c.ip)
 }
 
 func (c *Computer) incrementIP(amount int) {
@@ -317,11 +315,23 @@ func getOpCode(in int) OpCode {
 }
 
 func (c *Computer) WriteMem(pos int, val int) {
+	c.ensureMemBounds(pos)
 	c.memory[pos] = val
+}
+
+func (c *Computer) ensureMemBounds(pos int) {
+	if pos >= len(c.memory) {
+		c.memory = append(c.memory, make([]int, pos-len(c.memory)+1)...)
+	}
 }
 
 func (c *Computer) ReadMem(pos int) int {
 	return c.readMemChunk(pos, 1)[0]
+}
+
+func (c *Computer) readMemChunk(start, length int) []int {
+	c.ensureMemBounds(start + length)
+	return c.memory[start : start+length]
 }
 
 func (c *Computer) setIP(val int) {
@@ -417,5 +427,6 @@ func (c *Computer) halt() {
 }
 
 func (c *Computer) setRelativeBaseExec(in Instruction, args []int) {
-
+	c.relativeBase += c.ReadMem(args[0])
+	c.incrementIP(in.argCount + 1)
 }
