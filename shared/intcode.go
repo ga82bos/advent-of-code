@@ -22,6 +22,7 @@ type ParameterMode int
 const (
 	ParamModePositional ParameterMode = 0
 	ParamModeImmediate  ParameterMode = 1
+	ParamModeRelative   ParameterMode = 2
 )
 
 type Status int
@@ -72,6 +73,7 @@ type Computer struct {
 	input          chan int
 	output         chan int
 	debug          bool
+	relativeBase   int
 }
 
 func NewComputer(id int, memory string, onError onErrorFunc) *Computer {
@@ -81,14 +83,15 @@ func NewComputer(id int, memory string, onError onErrorFunc) *Computer {
 		os.Exit(1)
 	}
 	c := &Computer{
-		id:          id,
-		originalMem: CloneSlice(mem),
-		memory:      CloneSlice(mem),
-		ip:          0,
-		onError:     onError,
-		input:       make(chan int, 100),
-		output:      make(chan int, 100),
-		status:      StatusCreated,
+		id:           id,
+		originalMem:  CloneSlice(mem),
+		memory:       CloneSlice(mem),
+		ip:           0,
+		onError:      onError,
+		input:        make(chan int, 100),
+		output:       make(chan int, 100),
+		status:       StatusCreated,
+		relativeBase: 0,
 	}
 	instructions := []Instruction{
 		{
@@ -132,6 +135,11 @@ func NewComputer(id int, memory string, onError onErrorFunc) *Computer {
 			execute:  c.equalsExec,
 		},
 		{
+			opCode:   9,
+			argCount: 1,
+			execute:  c.setRelativeBaseExec,
+		},
+		{
 			opCode:   99,
 			argCount: 0,
 			execute:  c.haltExec,
@@ -152,6 +160,7 @@ func (c *Computer) SetDebug(val bool) {
 
 func (c *Computer) Reset() {
 	c.memory = CloneSlice(c.originalMem)
+	c.relativeBase = 0
 	c.setStatus(StatusCreated)
 	close(c.input)
 	close(c.output)
@@ -278,6 +287,8 @@ func (c *Computer) fetchArgs(length int, modes []ParameterMode) []int {
 			params[i] = args[i]
 		case ParamModeImmediate:
 			params[i] = c.ip + 1 + i
+		case ParamModeRelative:
+			params[i] = c.relativeBase + args[i]
 		}
 	}
 	return params
@@ -403,4 +414,8 @@ func (c *Computer) halt() {
 
 	close(c.input)
 	close(c.output)
+}
+
+func (c *Computer) setRelativeBaseExec(in Instruction, args []int) {
+
 }
